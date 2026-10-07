@@ -1,4 +1,4 @@
-package com.example.add_focus_app
+package com.addemma.focuslock
 
 import android.app.AppOpsManager
 import android.content.Context
@@ -24,9 +24,9 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 
 class MainActivity: FlutterActivity() {
-    private val APPS_CHANNEL = "com.example.add_focus_app/apps"
-    private val BLOCKING_CHANNEL = "com.example.add_focus_app/blocking"
-    private val EVENTS_CHANNEL = "com.example.add_focus_app/blocking_events"
+    private val APPS_CHANNEL = "com.addemma.focuslock/apps"
+    private val BLOCKING_CHANNEL = "com.addemma.focuslock/blocking"
+    private val EVENTS_CHANNEL = "com.addemma.focuslock/blocking_events"
     private val executor = Executors.newSingleThreadExecutor()
 
     private var eventSink: EventChannel.EventSink? = null

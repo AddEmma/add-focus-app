@@ -2,9 +2,9 @@ import 'package:flutter/services.dart';
 
 /// Service for communicating with native Android app blocking functionality
 class BlockingService {
-  static const _channel = MethodChannel('com.example.add_focus_app/blocking');
+  static const _channel = MethodChannel('com.addemma.focuslock/blocking');
   static const _eventChannel = EventChannel(
-    'com.example.add_focus_app/blocking_events',
+    'com.addemma.focuslock/blocking_events',
   );
 
   /// Starts focus mode for the specified apps (to BLOCK) until the end time

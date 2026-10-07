@@ -23,7 +23,7 @@ class AppInfo {
 }
 
 class AppsService {
-  static const platform = MethodChannel('com.example.add_focus_app/apps');
+  static const platform = MethodChannel('com.addemma.focuslock/apps');
 
   Future<List<AppInfo>> getInstalledApps() async {
     try {

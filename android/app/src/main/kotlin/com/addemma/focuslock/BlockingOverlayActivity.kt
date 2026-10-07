@@ -1,4 +1,4 @@
-package com.example.add_focus_app
+package com.addemma.focuslock
 
 import android.content.Intent
 import android.os.Bundle

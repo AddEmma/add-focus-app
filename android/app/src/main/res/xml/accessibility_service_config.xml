@@ -5,4 +5,4 @@
     android:accessibilityFeedbackType="feedbackGeneric"
     android:notificationTimeout="0"
     android:canRetrieveWindowContent="false"
-    android:settingsActivity="com.example.add_focus_app.MainActivity" />
+    android:settingsActivity="com.addemma.focuslock.MainActivity" />

@@ -1,4 +1,4 @@
-package com.example.add_focus_app
+package com.addemma.focuslock
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -20,8 +20,8 @@ class AppBlockerService : Service() {
     companion object {
         const val CHANNEL_ID = "app_blocker_channel"
         const val NOTIFICATION_ID = 1001
-        const val ACTION_START = "com.example.add_focus_app.START_BLOCKING"
-        const val ACTION_STOP = "com.example.add_focus_app.STOP_BLOCKING"
+        const val ACTION_START = "com.addemma.focuslock.START_BLOCKING"
+        const val ACTION_STOP = "com.addemma.focuslock.STOP_BLOCKING"
         const val EXTRA_BLOCKED_APPS = "blocked_apps"
         const val EXTRA_END_TIME = "end_time"
         const val EXTRA_PACKAGE_NAME = "package_name"

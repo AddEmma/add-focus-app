@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - FocusLock (Focus - App Blocker)</title>
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --text-main: #1F2937;
+            --text-muted: #4B5563;
+            --bg-page: #F9FAFB;
+            --bg-card: #FFFFFF;
+            --border: #E5E7EB;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.65;
+            color: var(--text-main);
+            background-color: var(--bg-page);
+            margin: 0;
+            padding: 24px 16px;
+        }
+        .container {
+            max-width: 780px;
+            margin: 0 auto;
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            border: 1px solid var(--border);
+        }
+        h1 {
+            font-size: 28px;
+            color: #111827;
+            margin-top: 0;
+            margin-bottom: 8px;
+        }
+        .effective-date {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 16px;
+        }
+        h2 {
+            font-size: 20px;
+            color: #111827;
+            margin-top: 32px;
+            margin-bottom: 12px;
+        }
+        p, li {
+            color: var(--text-muted);
+            font-size: 15px;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        .highlight-box {
+            background-color: #EEF2FF;
+            border-left: 4px solid var(--primary);
+            padding: 16px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .highlight-box strong {
+            color: #312E81;
+        }
+        .highlight-box p {
+            color: #3730A3;
+            margin: 0;
+            font-size: 14px;
+        }
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            font-size: 13px;
+            color: #9CA3AF;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Privacy Policy for FocusLock</h1>
+        <div class="effective-date">Last updated: October 7, 2026</div>
+
+        <p>This Privacy Policy explains how <strong>FocusLock</strong> ("we", "our", or "the App") operates and protects your privacy. We are committed to transparency and ensuring your personal information is protected.</p>
+
+        <div class="highlight-box">
+            <strong>Key Privacy Guarantee:</strong>
+            <p>FocusLock operates completely offline on your device. We do NOT collect, transmit, store, or sell any of your personal data, app usage history, or browsing habits to any third-party servers.</p>
+        </div>
+
+        <h2>1. Information We Collect and Process</h2>
+        <p>FocusLock is a productivity and digital wellbeing application designed to help users minimize distractions and lock selected applications during focus sessions. All processing happens locally on your Android device:</p>
+        <ul>
+            <li><strong>Installed Applications List:</strong> The app queries your device's installed package list solely to present you with a list of applications you may choose to restrict or block during a focus session. This information is processed in-memory and never sent off your device.</li>
+            <li><strong>Session Statistics & Task Logs:</strong> Information regarding your focus sessions (e.g., duration of focus, tasks completed, and scheduled timers) is stored entirely in a local SQLite database on your device for your personal tracking.</li>
+        </ul>
+
+        <h2>2. Disclosure of Sensitive Android Permissions</h2>
+        <p>To provide its core application-blocking and focus functionalities, FocusLock requests certain special Android permissions. We want you to be fully informed on why each permission is required:</p>
+        
+        <h3>Accessibility Service API (BIND_ACCESSIBILITY_SERVICE)</h3>
+        <p>FocusLock utilizes the Android AccessibilityService API strictly to perform its core function: detecting when a user attempts to open an application that they have selected to block during an active focus session.</p>
+        <ul>
+            <li><strong>Purpose:</strong> When an active focus session is running, the Accessibility Service monitors window change events to determine the foreground app package name. If the opened app is on your blocked list, FocusLock immediately displays an overlay screen reminding you to stay focused.</li>
+            <li><strong>What is NOT collected:</strong> The Accessibility Service is <strong>NOT</strong> used to collect, read, or record personal information, keystrokes, passwords, private messages, screen content, or audio. No data inspected by the Accessibility Service is stored or transmitted anywhere.</li>
+            <li><strong>User Consent:</strong> You have full control over this feature and must explicitly enable this permission in Android Settings. You can revoke this permission at any time.</li>
+        </ul>
+
+        <h3>Usage Access Permission (PACKAGE_USAGE_STATS)</h3>
+        <p>Used to verify active applications and provide you with statistics on your focus vs. distraction habits. No usage data leaves your device.</p>
+
+        <h3>Display Over Other Apps (SYSTEM_ALERT_WINDOW)</h3>
+        <p>Required to present a motivational overlay screen over blocked applications when you attempt to launch them during an active focus session.</p>
+
+        <h3>Foreground Service (FOREGROUND_SERVICE & FOREGROUND_SERVICE_SPECIAL_USE)</h3>
+        <p>Required to keep your focus timer active and reliably enforce blocking rules in the background until your scheduled session ends.</p>
+
+        <h3>Query All Packages (QUERY_ALL_PACKAGES)</h3>
+        <p>Required on Android 11+ so that you can view and select from your installed apps in order to create your custom blocklists.</p>
+
+        <h2>3. Data Sharing and Third Parties</h2>
+        <p>We do not share, sell, rent, or trade your personal information or usage data with any third parties or advertisers. We do not incorporate third-party tracking, analytics SDKs, or targeted advertising networks.</p>
+
+        <h2>4. Data Retention and Deletion</h2>
+        <p>All data generated by FocusLock (such as task history and focus session logs) is stored locally on your device. You can erase all data at any time by clearing the application's storage in Android Settings or by uninstalling the application.</p>
+
+        <h2>5. Children's Privacy</h2>
+        <p>Our application is not targeted towards children under the age of 13. We do not knowingly collect personal information from children.</p>
+
+        <h2>6. Changes to This Privacy Policy</h2>
+        <p>We may update this Privacy Policy from time to time. Any changes will be posted on this page with an updated "Last updated" date.</p>
+
+        <h2>7. Contact Us</h2>
+        <p>If you have questions, concerns, or feedback regarding this Privacy Policy or the app's privacy practices, please contact us at:</p>
+        <p><strong>Email:</strong> support@focuslock.app</p>
+
+        <footer>
+            &copy; 2026 FocusLock. All rights reserved.
+        </footer>
+    </div>
+</body>
+</html>
