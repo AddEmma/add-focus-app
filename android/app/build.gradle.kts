@@ -61,4 +61,7 @@ flutter {
 dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.core:core-ktx:1.12.0")
+    // On-device AI models for visual NSFW / bikini / half-naked / skin-exposure scanning
+    implementation("com.google.mlkit:image-labeling:17.0.8")
+    implementation("com.google.mlkit:face-detection:16.1.6")
 }

@@ -13,6 +13,7 @@ import '../../features/focus/set_focus_time_screen.dart';
 import '../../features/focus/focus_active_screen.dart';
 import '../../features/diagnostics/diagnostics_screen.dart';
 import '../../features/tasks/daily_plan_screen.dart';
+import '../../features/content_shield/content_shield_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _shellNavigatorKey =
@@ -97,6 +98,11 @@ final appRouter = GoRouter(
       path: '/daily-plan',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const DailyPlanScreen(),
+    ),
+    GoRoute(
+      path: '/content-shield',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const ContentShieldScreen(),
     ),
   ],
 );

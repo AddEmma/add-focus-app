@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
+import 'package:go_router/go_router.dart';
+import '../content_shield/providers/content_shield_provider.dart';
 import 'providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -35,6 +37,17 @@ class SettingsScreen extends ConsumerWidget {
             value: settings.darkMode,
             onChanged: (val) => notifier.setDarkMode(val),
             delay: 200,
+          ),
+
+          const SizedBox(height: AppTheme.spacingL),
+          _buildSectionHeader(context, 'Content Shield (NSFW & Porn Blocker)'),
+          _buildTile(
+            context,
+            icon: Icons.shield_rounded,
+            title: '24/7 Porn & Sexy Content Blocker',
+            trailing: ref.watch(contentShieldProvider).enabled ? 'Active' : 'Off',
+            onTap: () => context.push('/content-shield'),
+            delay: 250,
           ),
 
           const SizedBox(height: AppTheme.spacingL),

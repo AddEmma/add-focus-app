@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 
-/// Service for communicating with native Android app blocking functionality
+/// Service for communicating with native Android app blocking & Content Shield functionality
 class BlockingService {
   static const _channel = MethodChannel('com.addemma.focuslock/blocking');
   static const _eventChannel = EventChannel(
@@ -54,7 +54,89 @@ class BlockingService {
     }
   }
 
-  /// Stream of blocking events (attempts, etc.)
+  /// Configures the 3-Layer NSFW & Sexy Content Shield on native Android
+  Future<bool> configureContentShield({
+    required bool enabled,
+    required bool searchUrlFilterEnabled,
+    required bool visualAiScannerEnabled,
+    required bool blockSexyContent,
+    required int cooldownMinutes,
+    required List<String> customKeywords,
+  }) async {
+    try {
+      return await _channel.invokeMethod('configureContentShield', {
+            'enabled': enabled,
+            'searchUrlFilterEnabled': searchUrlFilterEnabled,
+            'visualAiScannerEnabled': visualAiScannerEnabled,
+            'blockSexyContent': blockSexyContent,
+            'cooldownMinutes': cooldownMinutes,
+            'customKeywords': customKeywords,
+          }) ??
+          false;
+    } on PlatformException catch (e) {
+      print('Failed to configure Content Shield: ${e.message}');
+      return false;
+    }
+  }
+
+  /// Gets current status, active cooldown locks, and intercept history for Content Shield
+  Future<Map<String, dynamic>> getContentShieldStatus() async {
+    try {
+      final result = await _channel.invokeMethod('getContentShieldStatus');
+      return Map<String, dynamic>.from(result ?? {});
+    } on PlatformException {
+      return {};
+    }
+  }
+
+  /// Starts the Layer 3 SafeSearch & Adult Domain Blocker local DNS VPN
+  Future<bool> startSafeSearchVpn() async {
+    try {
+      return await _channel.invokeMethod('startSafeSearchVpn') ?? false;
+    } on PlatformException catch (e) {
+      print('Failed to start SafeSearch VPN: ${e.message}');
+      return false;
+    }
+  }
+
+  /// Stops the Layer 3 SafeSearch & Adult Domain Blocker local DNS VPN
+  Future<bool> stopSafeSearchVpn() async {
+    try {
+      return await _channel.invokeMethod('stopSafeSearchVpn') ?? false;
+    } on PlatformException catch (e) {
+      print('Failed to stop SafeSearch VPN: ${e.message}');
+      return false;
+    }
+  }
+
+  /// Checks if SafeSearch DNS VPN is currently active
+  Future<bool> isSafeSearchVpnActive() async {
+    try {
+      return await _channel.invokeMethod('isSafeSearchVpnActive') ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Triggers a live preview/test of the NSFW Content Shield overlay
+  Future<void> testNsfwShield() async {
+    try {
+      await _channel.invokeMethod('testNsfwShield');
+    } on PlatformException catch (e) {
+      print('Failed to test NSFW shield: ${e.message}');
+    }
+  }
+
+  /// Clears active app cooldown locks
+  Future<bool> clearCooldownLocks() async {
+    try {
+      return await _channel.invokeMethod('clearCooldownLocks') ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Stream of blocking & NSFW shield events (attempts, intercepts, etc.)
   Stream<dynamic> get blockingEventsStream {
     return _eventChannel.receiveBroadcastStream();
   }

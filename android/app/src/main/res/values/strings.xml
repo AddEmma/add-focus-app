@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="accessibility_service_description">Used by FocusLock AI to detect when a distracting app is launched so it can block it.</string>
+    <string name="accessibility_service_description">Used by FocusLock AI to block distracting apps and protect you in real time from explicit searches, adult websites, and NSFW or half-naked visual content across browsers and social media.</string>
 </resources>

@@ -1,6 +1,5 @@
 package com.addemma.focuslock
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -14,9 +13,20 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+
+data class NsfwLockEntry(
+    val packageName: String,
+    val lockUntilMillis: Long,
+    val layer: String,
+    val category: String,
+    val matchedTrigger: String,
+    val details: String
+)
 
 class AppBlockerService : Service() {
-    
+
     companion object {
         const val CHANNEL_ID = "app_blocker_channel"
         const val NOTIFICATION_ID = 1001
@@ -25,9 +35,16 @@ class AppBlockerService : Service() {
         const val EXTRA_BLOCKED_APPS = "blocked_apps"
         const val EXTRA_END_TIME = "end_time"
         const val EXTRA_PACKAGE_NAME = "package_name"
-        
+
+        // Extras for NSFW / Content Shield Overlay
+        const val EXTRA_IS_NSFW_BLOCK = "is_nsfw_block"
+        const val EXTRA_NSFW_REASON = "nsfw_reason"
+        const val EXTRA_NSFW_LAYER = "nsfw_layer"
+        const val EXTRA_NSFW_CATEGORY = "nsfw_category"
+        const val EXTRA_NSFW_TRIGGER = "nsfw_trigger"
+
         const val TAG = "AppBlockerService"
-        
+
         var isRunning = false
             private set
 
@@ -39,13 +56,168 @@ class AppBlockerService : Service() {
         var sessionEndTimeMillis: Long = 0
             private set
 
-        // Listener for real-time events
+        // NSFW Content Shield cooldown locks & intercept history
+        val nsfwCooldownLocks = ConcurrentHashMap<String, NsfwLockEntry>()
+        val nsfwInterceptHistory = CopyOnWriteArrayList<Map<String, Any>>()
+        @Volatile var nsfwBlockedCount: Int = 0
+
+        // Listener for real-time focus events
         var onBlockedAttempt: ((String, Int, Boolean) -> Unit)? = null
-        
+
         // Listener for app usage tracking (real-time)
         var onAppActivity: ((String) -> Unit)? = null
-        
+
+        // Listener for real-time NSFW Content Shield block events
+        var onNsfwBlocked: ((Map<String, Any>) -> Unit)? = null
+
         var instance: AppBlockerService? = null
+
+        fun getCooldownRemainingMillis(context: Context, pkg: String): Long {
+            val now = System.currentTimeMillis()
+            val entry = nsfwCooldownLocks[pkg] ?: return 0L
+            val remaining = entry.lockUntilMillis - now
+            if (remaining <= 0L) {
+                nsfwCooldownLocks.remove(pkg)
+                return 0L
+            }
+            return remaining
+        }
+
+        fun checkAndEnforceBlock(context: Context, foregroundApp: String) {
+            if (foregroundApp == context.packageName ||
+                foregroundApp == "com.android.systemui" ||
+                foregroundApp == "com.android.settings"
+            ) {
+                return
+            }
+
+            // 1. Check active NSFW Cooldown Lock (works 24/7 even without a Focus Timer!)
+            val remainingCooldown = getCooldownRemainingMillis(context, foregroundApp)
+            if (remainingCooldown > 0L) {
+                val entry = nsfwCooldownLocks[foregroundApp]
+                Log.w(TAG, "Enforcing active NSFW Cooldown Lock on $foregroundApp (${remainingCooldown / 1000}s left)")
+                sendUserHomeStatic(context)
+                showNsfwOverlayStatic(
+                    context = context,
+                    pkgName = foregroundApp,
+                    lockUntilMillis = entry?.lockUntilMillis ?: (System.currentTimeMillis() + remainingCooldown),
+                    layer = entry?.layer ?: "CONTENT_SHIELD",
+                    category = entry?.category ?: "SEXY_HALF_NAKED",
+                    trigger = entry?.matchedTrigger ?: "Restricted Content",
+                    reason = entry?.details ?: "Locked by Content Shield cooldown."
+                )
+                return
+            }
+
+            // 2. Check active Focus Session via AppBlockerService instance
+            instance?.handleForegroundAppChange(foregroundApp)
+        }
+
+        fun triggerNsfwCooldownLock(
+            context: Context,
+            packageName: String,
+            detection: NsfwDetectionResult,
+            cooldownMinutes: Int
+        ) {
+            val now = System.currentTimeMillis()
+            val durationMillis = (cooldownMinutes.coerceIn(1, 120)) * 60_000L
+            val lockUntilMillis = now + durationMillis
+
+            val entry = NsfwLockEntry(
+                packageName = packageName,
+                lockUntilMillis = lockUntilMillis,
+                layer = detection.layer,
+                category = detection.category,
+                matchedTrigger = detection.matchedTrigger,
+                details = detection.details
+            )
+            nsfwCooldownLocks[packageName] = entry
+            nsfwBlockedCount++
+
+            val eventMap = mapOf(
+                "event" to "nsfw_blocked",
+                "packageName" to packageName,
+                "layer" to detection.layer,
+                "category" to detection.category,
+                "matchedTrigger" to detection.matchedTrigger,
+                "details" to detection.details,
+                "confidence" to detection.confidence,
+                "lockUntilMillis" to lockUntilMillis,
+                "cooldownMinutes" to cooldownMinutes,
+                "timestamp" to now,
+                "totalNsfwBlocked" to nsfwBlockedCount
+            )
+
+            nsfwInterceptHistory.add(0, eventMap)
+            while (nsfwInterceptHistory.size > 50) {
+                nsfwInterceptHistory.removeAt(nsfwInterceptHistory.size - 1)
+            }
+
+            onNsfwBlocked?.invoke(eventMap)
+
+            // Persist count in SharedPreferences
+            try {
+                val prefs = context.getSharedPreferences(
+                    FocusAccessibilityService.PREFS_NAME,
+                    Context.MODE_PRIVATE
+                )
+                prefs.edit().putLong("flutter.shield_blocked_count", nsfwBlockedCount.toLong()).apply()
+            } catch (_: Exception) {
+            }
+
+            // Immediately send user to Home Screen and launch the Content Shield Overlay
+            sendUserHomeStatic(context)
+            showNsfwOverlayStatic(
+                context = context,
+                pkgName = packageName,
+                lockUntilMillis = lockUntilMillis,
+                layer = detection.layer,
+                category = detection.category,
+                trigger = detection.matchedTrigger,
+                reason = detection.details
+            )
+        }
+
+        fun sendUserHomeStatic(context: Context) {
+            try {
+                val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(homeIntent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send user home", e)
+            }
+        }
+
+        fun showNsfwOverlayStatic(
+            context: Context,
+            pkgName: String,
+            lockUntilMillis: Long,
+            layer: String,
+            category: String,
+            trigger: String,
+            reason: String
+        ) {
+            try {
+                val intent = Intent(context, BlockingOverlayActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                    putExtra(EXTRA_END_TIME, lockUntilMillis)
+                    putExtra(EXTRA_PACKAGE_NAME, pkgName)
+                    putExtra(EXTRA_IS_NSFW_BLOCK, true)
+                    putExtra(EXTRA_NSFW_LAYER, layer)
+                    putExtra(EXTRA_NSFW_CATEGORY, category)
+                    putExtra(EXTRA_NSFW_TRIGGER, trigger)
+                    putExtra(EXTRA_NSFW_REASON, reason)
+                }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to launch NSFW BlockingOverlayActivity", e)
+            }
+        }
     }
 
     private var blockedApps: List<String> = emptyList()
@@ -110,34 +282,37 @@ class AppBlockerService : Service() {
     }
 
     fun handleForegroundAppChange(foregroundApp: String) {
+        // Check NSFW Cooldown Lock first
+        if (getCooldownRemainingMillis(this, foregroundApp) > 0L) {
+            checkAndEnforceBlock(this, foregroundApp)
+            return
+        }
+
         val isBlocked = shouldBlock(foregroundApp)
         val isNewApp = foregroundApp != lastForegroundApp
-        
+
         if (isNewApp) {
             Log.d(TAG, "New Foreground App: $foregroundApp, shouldBlock=$isBlocked")
-            
+
             // Report all app activity for stats tracking
             onAppActivity?.invoke(foregroundApp)
-            
+
             // Increment blocked attempts on first detection of a blocked app
             if (isBlocked) {
                 blockedAttempts++
             }
-            
+
             lastForegroundApp = foregroundApp
             // Stream detection event with blocking status
             onBlockedAttempt?.invoke(foregroundApp, blockedAttempts, isBlocked)
         }
-    
+
         // ALWAYS block on every check — not just on app change.
-        // This ensures that if the user dismisses the overlay and returns
-        // to the blocked app, it gets re-blocked immediately.
         if (isBlocked) {
             Log.i(TAG, "!!! SHIELD ACTIVE: Blocking $foregroundApp !!!")
-            // Send user to home screen first, then show overlay
             sendUserHome()
             showBlockingOverlay(foregroundApp)
-            if (!isNewApp) { // Ensure stream updates if they try to bypass
+            if (!isNewApp) {
                 onBlockedAttempt?.invoke(foregroundApp, blockedAttempts, true)
             }
         }
@@ -147,12 +322,10 @@ class AppBlockerService : Service() {
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val now = System.currentTimeMillis()
 
-        // Source 1: Aggregated Usage Stats (Last 1 minute)
-        // This is often more reliable for "Who is in front right now?" on some ROMs
         val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, now - 60000, now)
         var latestStatsApp: String? = null
         var latestStatsTime: Long = 0
-        
+
         if (stats != null) {
             for (stat in stats) {
                 if (stat.lastTimeUsed > latestStatsTime) {
@@ -162,13 +335,11 @@ class AppBlockerService : Service() {
             }
         }
 
-        // Source 2: Recent Events (Last 10 seconds)
-        // Faster for detecting quick switches
         val usageEvents = usageStatsManager.queryEvents(now - 10000, now)
         val event = android.app.usage.UsageEvents.Event()
         var latestEventApp: String? = null
         var latestEventTime: Long = 0
-        
+
         while (usageEvents.hasNextEvent()) {
             usageEvents.getNextEvent(event)
             if (event.timeStamp > latestEventTime) {
@@ -179,67 +350,41 @@ class AppBlockerService : Service() {
             }
         }
 
-        // Resolution: Prefer Activity Events (more specific) if fresh, else use UsageStats
         val resolvedApp = if (latestEventTime > latestStatsTime - 500) latestEventApp else latestStatsApp
-        
-        if (resolvedApp != null) {
-            Log.v(TAG, "Detection -> Stats: $latestStatsApp (${now - latestStatsTime}ms ago), " +
-                  "Event: $latestEventApp (${now - latestEventTime}ms ago) -> Resolved: $resolvedApp")
-        }
-        
         return resolvedApp ?: latestStatsApp ?: latestEventApp
     }
 
     private fun shouldBlock(pkg: String): Boolean {
-        // ALWAYS ALLOW: Focus app itself
         if (pkg == packageName) return false
 
-        // ALWAYS ALLOW: The Launcher (Home Screen)
-        // Use cached launcher if available, else resolve
         val launcher = launcherPackage ?: updateLauncherPackage().let { launcherPackage }
         if (pkg == launcher) return false
 
-        // ALWAYS ALLOW: System Settings & common system UI
         if (pkg == "com.android.settings" || pkg == "com.android.systemui") return false
-        
-        // ALLOW: MIUI Security Center (required for permissions overlays sometimes)
         if (pkg == "com.miui.securitycenter") return false
 
-        // BLOCK if the package IS in the blocked apps list
         val isBlockedList = blockedApps.any { it.equals(pkg, ignoreCase = true) }
-        
         if (isBlockedList) {
             Log.d(TAG, "Shield check: $pkg IS BLOCKED (Matches in list of ${blockedApps.size} apps)")
         }
-        
         return isBlockedList
     }
 
-    private fun isLauncher(pkg: String): Boolean {
-        return pkg == launcherPackage
-    }
-    
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
                 val newBlockedApps = intent.getStringArrayListExtra(EXTRA_BLOCKED_APPS) ?: emptyList()
                 val newEndTimeMillis = intent.getLongExtra(EXTRA_END_TIME, 0)
-                
-                // If service is already running and end time is substantially the same,
-                // just update the list and notification without resetting attempts.
+
                 val isUpdate = isRunning && Math.abs(newEndTimeMillis - endTimeMillis) < 2000
-                
+
                 blockedApps = newBlockedApps
                 endTimeMillis = newEndTimeMillis
-                
-                // Update companion object for real-time access
+
                 blockedAppsList = blockedApps
                 sessionEndTimeMillis = endTimeMillis
-                
-                if (isUpdate) {
-                    Log.d(TAG, "Updating active session with ${blockedApps.size} apps: $blockedApps")
-                } else {
-                    Log.d(TAG, "Starting new blocking session for ${blockedApps.size} apps: $blockedApps")
+
+                if (!isUpdate) {
                     lastForegroundApp = null
                     blockedAttempts = 0
                 }
@@ -251,7 +396,6 @@ class AppBlockerService : Service() {
                         isRunning = true
                     }
                 } else {
-                    Log.w(TAG, "Start requested but end time $endTimeMillis is in the past!")
                     if (!isRunning) stopSelf()
                 }
             }
@@ -262,10 +406,9 @@ class AppBlockerService : Service() {
         }
         return START_STICKY
     }
-    
+
     override fun onBind(intent: Intent?): IBinder? = null
-    
-    
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -276,19 +419,19 @@ class AppBlockerService : Service() {
                 description = "Shows when focus mode is active"
                 setShowBadge(false)
             }
-            
+
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager.createNotificationChannel(channel)
         }
     }
-    
+
     private fun startForegroundService() {
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this, 0, notificationIntent,
             PendingIntent.FLAG_IMMUTABLE
         )
-        
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Focus Mode Active")
             .setContentText("Blocking ${blockedApps.size} apps")
@@ -296,20 +439,20 @@ class AppBlockerService : Service() {
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
-        
+
         startForeground(NOTIFICATION_ID, notification)
     }
-    
+
     private fun startMonitoring() {
         isMonitoring = true
         handler.post(monitorRunnable)
     }
-    
+
     private fun stopMonitoring() {
         isMonitoring = false
         handler.removeCallbacks(monitorRunnable)
     }
-    
+
     fun showBlockingOverlay(pkgName: String? = null) {
         val intent = Intent(this, BlockingOverlayActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -318,16 +461,12 @@ class AppBlockerService : Service() {
             addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
             putExtra(EXTRA_END_TIME, endTimeMillis)
             putExtra(EXTRA_PACKAGE_NAME, pkgName)
+            putExtra(EXTRA_IS_NSFW_BLOCK, false)
         }
         startActivity(intent)
     }
 
     private fun sendUserHome() {
-        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        startActivity(homeIntent)
+        sendUserHomeStatic(this)
     }
 }
-

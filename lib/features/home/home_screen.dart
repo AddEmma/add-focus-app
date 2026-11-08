@@ -9,6 +9,7 @@ import '../stats/providers/stats_provider.dart';
 import '../tasks/providers/tasks_provider.dart';
 import '../tasks/models/task.dart';
 import '../tasks/widgets/add_task_bottom_sheet.dart';
+import '../content_shield/providers/content_shield_provider.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -79,6 +80,14 @@ class HomeScreen extends ConsumerWidget {
                 loading: () => const SizedBox(height: 80),
                 error: (_, __) => const SizedBox(),
               ),
+            ),
+          ),
+
+          // 24/7 Content Shield (Porn & Sexy Content Blocker) Card
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: _buildContentShieldBanner(context, ref),
             ),
           ),
 
@@ -745,6 +754,111 @@ class HomeScreen extends ConsumerWidget {
           ),
         ).animate().fadeIn(delay: 300.ms).scale(),
       ),
+    );
+  }
+
+  Widget _buildContentShieldBanner(BuildContext context, WidgetRef ref) {
+    final shield = ref.watch(contentShieldProvider);
+    final isEnabled = shield.enabled;
+
+    return GestureDetector(
+      onTap: () => context.push('/content-shield'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          gradient: isEnabled
+              ? const LinearGradient(
+                  colors: [Color(0xFF28112B), Color(0xFF1A1A2E)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: isEnabled ? null : AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isEnabled
+                ? const Color(0xFFFF4B72).withOpacity(0.4)
+                : Colors.white10,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isEnabled
+                    ? const Color(0xFFFF4B72).withOpacity(0.2)
+                    : Colors.white10,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.shield_rounded,
+                color: isEnabled ? const Color(0xFFFF4B72) : Colors.white54,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Content Shield',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isEnabled
+                              ? const Color(0xFFFF4B72).withOpacity(0.2)
+                              : Colors.white10,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          isEnabled
+                              ? (shield.blockSexyContent ? 'STRICT 24/7' : 'ON')
+                              : 'PAUSED',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: isEnabled
+                                ? const Color(0xFFFF4B72)
+                                : Colors.white54,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    isEnabled
+                        ? 'Visual AI + Search/URL + SafeSearch · ${shield.totalBlockedCount} blocked'
+                        : 'Tap to enable porn & half-naked photo/video blocker',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white54,
+            ),
+          ],
+        ),
+      ).animate().fadeIn(delay: 250.ms),
     );
   }
 

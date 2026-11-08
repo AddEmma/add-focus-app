@@ -1,11 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Permissions for app blocking feature -->
+    <!-- Permissions for app blocking & NSFW content shield feature -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
     
     <application
         android:label="FocusLock"
@@ -42,7 +43,7 @@
             android:launchMode="singleTop"
             android:excludeFromRecents="true" />
             
-        <!-- Accessibility Service for Instant App Detection -->
+        <!-- Accessibility Service for Instant App Detection, Search/URL Filtering & Visual AI Scanning -->
         <service
             android:name=".FocusAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -55,7 +56,7 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
         
-        <!-- App blocker foreground service -->
+        <!-- App blocker & Content Shield foreground service -->
         <service
             android:name=".AppBlockerService"
             android:exported="false"
@@ -63,6 +64,20 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="app_blocking" />
+        </service>
+
+        <!-- Layer 3: SafeSearch & Adult Domain Blocker VPN Service -->
+        <service
+            android:name=".SafeSearchVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="content_filtering_vpn" />
         </service>
         
         <!-- Don't delete the meta-data below.

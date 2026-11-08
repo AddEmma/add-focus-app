@@ -1,5 +1,6 @@
 package com.addemma.focuslock
 
+import android.app.Activity
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
@@ -9,6 +10,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.net.VpnService
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -27,14 +29,19 @@ class MainActivity: FlutterActivity() {
     private val APPS_CHANNEL = "com.addemma.focuslock/apps"
     private val BLOCKING_CHANNEL = "com.addemma.focuslock/blocking"
     private val EVENTS_CHANNEL = "com.addemma.focuslock/blocking_events"
+    private val VPN_REQUEST_CODE = 202
     private val executor = Executors.newSingleThreadExecutor()
 
     private var eventSink: EventChannel.EventSink? = null
+    private var pendingVpnResult: MethodChannel.Result? = null
     private val handler = Handler(Looper.getMainLooper())
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        
+
+        // Initialize Content Shield config from SharedPreferences on startup
+        FocusAccessibilityService.instance?.loadShieldConfigFromPrefs(this)
+
         // Apps channel - for getting installed apps
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, APPS_CHANNEL).setMethodCallHandler { call, result ->
             if (call.method == "getInstalledApps") {
@@ -48,8 +55,8 @@ class MainActivity: FlutterActivity() {
                 result.notImplemented()
             }
         }
-        
-        // Blocking channel - for app blocking functionality
+
+        // Blocking & Content Shield channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BLOCKING_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "startBlocking" -> {
@@ -73,6 +80,96 @@ class MainActivity: FlutterActivity() {
                         "endTimeMillis" to AppBlockerService.sessionEndTimeMillis
                     )
                     result.success(status)
+                }
+                "configureContentShield" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: true
+                    val searchUrlEnabled = call.argument<Boolean>("searchUrlFilterEnabled") ?: true
+                    val visualAiEnabled = call.argument<Boolean>("visualAiScannerEnabled") ?: true
+                    val blockSexy = call.argument<Boolean>("blockSexyContent") ?: true
+                    val cooldownMins = call.argument<Int>("cooldownMinutes") ?: 10
+                    val customKeywords = call.argument<List<String>>("customKeywords") ?: emptyList()
+
+                    FocusAccessibilityService.contentShieldEnabled = enabled
+                    FocusAccessibilityService.searchUrlFilterEnabled = searchUrlEnabled
+                    FocusAccessibilityService.visualAiScannerEnabled = visualAiEnabled
+                    FocusAccessibilityService.blockSexyContent = blockSexy
+                    FocusAccessibilityService.cooldownMinutes = cooldownMins
+                    NsfwContentFilter.updateCustomKeywords(customKeywords)
+
+                    result.success(true)
+                }
+                "getContentShieldStatus" -> {
+                    val now = System.currentTimeMillis()
+                    val activeLocks = mutableListOf<Map<String, Any>>()
+                    val iterator = AppBlockerService.nsfwCooldownLocks.entries.iterator()
+                    while (iterator.hasNext()) {
+                        val entry = iterator.next().value
+                        val remainingMs = entry.lockUntilMillis - now
+                        if (remainingMs <= 0L) {
+                            iterator.remove()
+                        } else {
+                            activeLocks.add(
+                                mapOf(
+                                    "packageName" to entry.packageName,
+                                    "lockUntilMillis" to entry.lockUntilMillis,
+                                    "remainingSeconds" to (remainingMs / 1000L).toInt(),
+                                    "layer" to entry.layer,
+                                    "category" to entry.category,
+                                    "matchedTrigger" to entry.matchedTrigger,
+                                    "details" to entry.details
+                                )
+                            )
+                        }
+                    }
+
+                    val status = mapOf(
+                        "enabled" to FocusAccessibilityService.contentShieldEnabled,
+                        "searchUrlFilterEnabled" to FocusAccessibilityService.searchUrlFilterEnabled,
+                        "visualAiScannerEnabled" to FocusAccessibilityService.visualAiScannerEnabled,
+                        "blockSexyContent" to FocusAccessibilityService.blockSexyContent,
+                        "cooldownMinutes" to FocusAccessibilityService.cooldownMinutes,
+                        "vpnActive" to SafeSearchVpnService.isRunning,
+                        "accessibilityActive" to hasAccessibilityPermission(),
+                        "nsfwBlockedCount" to AppBlockerService.nsfwBlockedCount,
+                        "activeLocks" to activeLocks,
+                        "interceptHistory" to AppBlockerService.nsfwInterceptHistory.toList(),
+                        "customKeywords" to NsfwContentFilter.customBlockedKeywords.toList()
+                    )
+                    result.success(status)
+                }
+                "startSafeSearchVpn" -> {
+                    startSafeSearchVpn(result)
+                }
+                "stopSafeSearchVpn" -> {
+                    stopSafeSearchVpn()
+                    result.success(true)
+                }
+                "isSafeSearchVpnActive" -> {
+                    result.success(SafeSearchVpnService.isRunning)
+                }
+                "testNsfwShield" -> {
+                    val sampleDetection = NsfwDetectionResult(
+                        isBlocked = true,
+                        layer = "VISUAL_AI_SCANNER",
+                        category = "SEXY_HALF_NAKED",
+                        matchedTrigger = "Bikini / Cleavage Exposure",
+                        confidence = 0.91f,
+                        details = "Visual AI Scanner test: Detected revealing/half-naked content on screen."
+                    )
+                    AppBlockerService.showNsfwOverlayStatic(
+                        context = this,
+                        pkgName = "com.instagram.android",
+                        lockUntilMillis = System.currentTimeMillis() + (FocusAccessibilityService.cooldownMinutes * 60_000L),
+                        layer = sampleDetection.layer,
+                        category = sampleDetection.category,
+                        trigger = sampleDetection.matchedTrigger,
+                        reason = sampleDetection.details
+                    )
+                    result.success(true)
+                }
+                "clearCooldownLocks" -> {
+                    AppBlockerService.nsfwCooldownLocks.clear()
+                    result.success(true)
                 }
                 "hasUsageStatsPermission" -> {
                     result.success(hasUsageStatsPermission())
@@ -114,13 +211,11 @@ class MainActivity: FlutterActivity() {
             }
         }
 
-        // Event channel - for real-time blocking events streamed to Flutter
+        // Event channel - for real-time blocking & NSFW shield events streamed to Flutter
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENTS_CHANNEL).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     eventSink = events
-                    eventSink = events
-                    // Set up the callback so AppBlockerService pushes events here
                     AppBlockerService.onBlockedAttempt = { packageName, totalAttempts, isBlocked ->
                         handler.post {
                             eventSink?.success(mapOf(
@@ -142,15 +237,67 @@ class MainActivity: FlutterActivity() {
                             ))
                         }
                     }
+
+                    AppBlockerService.onNsfwBlocked = { nsfwEventMap ->
+                        handler.post {
+                            eventSink?.success(nsfwEventMap)
+                        }
+                    }
                 }
 
                 override fun onCancel(arguments: Any?) {
                     eventSink = null
                     AppBlockerService.onBlockedAttempt = null
                     AppBlockerService.onAppActivity = null
+                    AppBlockerService.onNsfwBlocked = null
                 }
             }
         )
+    }
+
+    private fun startSafeSearchVpn(result: MethodChannel.Result) {
+        val prepareIntent = VpnService.prepare(this)
+        if (prepareIntent != null) {
+            pendingVpnResult = result
+            @Suppress("DEPRECATION")
+            startActivityForResult(prepareIntent, VPN_REQUEST_CODE)
+        } else {
+            launchSafeSearchVpnService()
+            result.success(true)
+        }
+    }
+
+    private fun launchSafeSearchVpnService() {
+        val intent = Intent(this, SafeSearchVpnService::class.java).apply {
+            action = SafeSearchVpnService.ACTION_START_VPN
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    private fun stopSafeSearchVpn() {
+        val intent = Intent(this, SafeSearchVpnService::class.java).apply {
+            action = SafeSearchVpnService.ACTION_STOP_VPN
+        }
+        startService(intent)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == VPN_REQUEST_CODE) {
+            val callback = pendingVpnResult
+            pendingVpnResult = null
+            if (resultCode == Activity.RESULT_OK) {
+                launchSafeSearchVpnService()
+                callback?.success(true)
+            } else {
+                callback?.success(false)
+            }
+        }
     }
 
     private fun getRecentUsageEvents(): List<Map<String, Any>> {
@@ -164,11 +311,10 @@ class MainActivity: FlutterActivity() {
 
         while (usageEvents.hasNextEvent()) {
             usageEvents.getNextEvent(event)
-            // Filter a bit to reduce noise, but keep enough for debug
             if (event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED ||
                 event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED ||
                 event.eventType == 7 /* USER_INTERACTION */) {
-                
+
                 eventList.add(mapOf(
                     "packageName" to event.packageName,
                     "eventType" to event.eventType,
@@ -176,31 +322,30 @@ class MainActivity: FlutterActivity() {
                 ))
             }
         }
-        // Return reverse chronological (newest first)
         return eventList.reversed().take(50)
     }
-    
+
     private fun startBlocking(blockedApps: List<String>, endTimeMillis: Long) {
         val intent = Intent(this, AppBlockerService::class.java).apply {
             action = AppBlockerService.ACTION_START
             putStringArrayListExtra(AppBlockerService.EXTRA_BLOCKED_APPS, ArrayList(blockedApps))
             putExtra(AppBlockerService.EXTRA_END_TIME, endTimeMillis)
         }
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
             startService(intent)
         }
     }
-    
+
     private fun stopBlocking() {
         val intent = Intent(this, AppBlockerService::class.java).apply {
             action = AppBlockerService.ACTION_STOP
         }
         startService(intent)
     }
-    
+
     private fun hasUsageStatsPermission(): Boolean {
         val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -219,7 +364,7 @@ class MainActivity: FlutterActivity() {
         }
         return mode == AppOpsManager.MODE_ALLOWED
     }
-    
+
     private fun hasOverlayPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Settings.canDrawOverlays(this)
@@ -227,13 +372,13 @@ class MainActivity: FlutterActivity() {
             true
         }
     }
-    
+
     private fun requestUsageStatsPermission() {
         val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
     }
-    
+
     private fun requestOverlayPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val intent = Intent(
@@ -298,22 +443,18 @@ class MainActivity: FlutterActivity() {
     private fun getInstalledApps(): List<Map<String, Any>> {
         val appsList = mutableListOf<Map<String, Any>>()
         val packageManager = context.packageManager
-        
+
         val packages = packageManager.getInstalledPackages(PackageManager.GET_META_DATA)
         Log.d("MainActivity", "Found ${packages.size} packages installed on device")
 
         for (packageInfo in packages) {
             val appInfo = packageInfo.applicationInfo ?: continue
-            
-            // Only include launchable apps (skip system services)
+
             val launchIntent = packageManager.getLaunchIntentForPackage(packageInfo.packageName)
             if (launchIntent != null) {
-                // Skip our own app from the list
                 if (packageInfo.packageName == context.packageName) continue
 
                 val appName = packageManager.getApplicationLabel(appInfo).toString()
-                Log.d("MainActivity", "Adding app: $appName (${packageInfo.packageName})")
-                
                 try {
                     val icon = getAppIconBase64(packageManager.getApplicationIcon(appInfo))
                     val appMap = mapOf(
@@ -327,7 +468,6 @@ class MainActivity: FlutterActivity() {
                 }
             }
         }
-        Log.d("MainActivity", "Returning ${appsList.size} launchable apps")
         return appsList
     }
 
